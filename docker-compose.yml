@@ -3,6 +3,8 @@ services:
   elasticsearch:
     image: elasticsearch:7.6.2
     container_name: es
+    networks:
+    - es-net
     environment:
       - cluster.name=elasticsearch #设置集群名称为elasticsearch
       - discovery.type=single-node #以单一节点模式启动
@@ -15,10 +17,25 @@ services:
       # - ./elasticsearch\x-pack-6.2.4.zip:/usr/share/elasticsearch/templ/x-pack-6.2.4.zip
     ports:
       - 9200:9200
+      
+  elastichd:
+    image: containerize/elastichd:latest
+    container_name: elasticsearch-hd
+    networks:
+    - es-net
+    ports:
+      - "9800:9800"
+    depends_on:
+      - "elasticsearch"
+    links:
+      - elasticsearch:es #可以用es这个域名访问elasticsearch服务
+
 
   kibana:
     image: kibana:7.6.2
     container_name: kibana
+    networks:
+    - es-net
     links:
       - elasticsearch:es #可以用es这个域名访问elasticsearch服务
     depends_on:
@@ -31,6 +48,8 @@ services:
   logstash:
     image: logstash:7.6.2
     container_name: logstash
+    networks:
+    - es-net
     volumes:
       - ./logstash/logstash-springboot.conf:/usr/share/logstash/pipeline/logstash.conf #挂载logstash的配置文件
       - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
@@ -40,3 +59,7 @@ services:
       - elasticsearch:es #可以用es这个域名访问elasticsearch服务
     ports:
       - 4560:4560
+ 
+networks:
+  es-net:
+    external: false
