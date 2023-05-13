@@ -1,65 +1,140 @@
-version: '3'
+version: '2.2'
 services:
-  elasticsearch:
-    image: elasticsearch:7.6.2
-    container_name: es
-    networks:
-    - es-net
+  es01:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.8.0
+    container_name: es01
     environment:
-      - cluster.name=elasticsearch #设置集群名称为elasticsearch
-      - discovery.type=single-node #以单一节点模式启动
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m #设置使用jvm内存大小
-      - http.cors.enabled=true
-      - http.cors.allow-origin="*"
+      # 节点名称：node.name
+      - node.name=es01
+      # 集群名称：cluster.name
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es02,es03
+      # 用于在es集群初始化时选举主节点master
+      - cluster.initial_master_nodes=es01,es02,es03
+      # 锁定进程的物理内存地址避免交换（swapped）来提高性能：bootstrap.memory_lock=true
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     volumes:
-      - ./elasticsearch/plugins:/usr/share/elasticsearch/plugins #插件文件挂载
-      - ./elasticsearch/data:/usr/share/elasticsearch/data #数据文件挂载
-      # - ./elasticsearch\x-pack-6.2.4.zip:/usr/share/elasticsearch/templ/x-pack-6.2.4.zip
+      - ./es01/data:/usr/share/elasticsearch/data
+      - ./es01/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - ./es01/logs:/usr/share/elasticsearch/logs
+      - /etc/localtime:/etc/localtime:ro
     ports:
-      - 9200:9200
-      
-  elastichd:
+      - "9200:9200"
+    networks:
+      - elastic
+
+  es02:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.8.0
+    container_name: es02
+    environment:
+      - node.name=es02
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es01,es03
+      # 用于在es集群初始化时选举主节点master
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./es02/data:/usr/share/elasticsearch/data
+      - ./es02/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - ./es02/logs:/usr/share/elasticsearch/logs
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - elastic
+
+  es03:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.8.0
+    container_name: es03
+    environment:
+      - node.name=es03
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es01,es02
+      # 用于在es集群初始化时选举主节点master
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./es03/data:/usr/share/elasticsearch/data
+      - ./es03/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - ./es03/logs:/usr/share/elasticsearch/logs
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - elastic
+
+  logstash:
+    image: logstash:7.8.0
+    container_name: logstash
+    volumes:
+      - ./logstash/config/logstash-springboot.conf:/usr/share/logstash/pipeline/logstash.conf #挂载logstash的配置文件
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - /etc/localtime:/etc/localtime:ro
+    links:
+      - es01:es01 #可以用es01这个域名访问elasticsearch服务
+      - es02:es02 #可以用es02这个域名访问elasticsearch服务
+      - es03:es03 #可以用es03这个域名访问elasticsearch服务
+    ports:
+      - "4560:4560"
+    depends_on:
+      - es01 #kibana在elasticsearch启动之后再启动
+      - es02 #kibana在elasticsearch启动之后再启动
+      - es03 #kibana在elasticsearch启动之后再启动
+    networks:
+      - elastic
+
+  kibana:
+    image: kibana:7.8.0
+    container_name: kibana
+    environment:
+      - I18N_LOCALE=zh-CN
+      - XPACK_GRAPH_ENABLED=true
+      - TIMELION_ENABLED=true
+      - XPACK_MONITORING_COLLECTION_ENABLED="true"
+      - elasticsearch.hosts=http://es01:9200 #设置访问elasticsearch的地址
+    links:
+      - es01:es01 #可以用es01这个域名访问elasticsearch服务
+      - es02:es02 #可以用es02这个域名访问elasticsearch服务
+      - es03:es03 #可以用es03这个域名访问elasticsearch服务
+    volumes:
+      - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "5601:5601"
+    depends_on:
+      - es01 #kibana在elasticsearch启动之后再启动
+      - es02 #kibana在elasticsearch启动之后再启动
+      - es03 #kibana在elasticsearch启动之后再启动
+    networks:
+      - elastic
+
+  elasticsearch-hd:
     image: containerize/elastichd:latest
     container_name: elasticsearch-hd
-    networks:
-    - es-net
     ports:
       - "9800:9800"
     depends_on:
-      - "elasticsearch"
+      - es01
+      - es02
+      - es03
     links:
-      - elasticsearch:es #可以用es这个域名访问elasticsearch服务
-
-
-  kibana:
-    image: kibana:7.6.2
-    container_name: kibana
+      - es01:es01 #可以用es这个域名访问elasticsearch服务
+      - es03:es02 #可以用es这个域名访问elasticsearch服务
+      - es03:es03 #可以用es这个域名访问elasticsearch服务
     networks:
-    - es-net
-    links:
-      - elasticsearch:es #可以用es这个域名访问elasticsearch服务
-    depends_on:
-      - elasticsearch #kibana在elasticsearch启动之后再启动
-    environment:
-      - "elasticsearch.hosts=http://localhost:9200" #设置访问elasticsearch的地址
-    ports:
-      - 5601:5601
+      - elastic
 
-  logstash:
-    image: logstash:7.6.2
-    container_name: logstash
-    networks:
-    - es-net
-    volumes:
-      - ./logstash/logstash-springboot.conf:/usr/share/logstash/pipeline/logstash.conf #挂载logstash的配置文件
-      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
-    depends_on:
-      - elasticsearch #kibana在elasticsearch启动之后再启动
-    links:
-      - elasticsearch:es #可以用es这个域名访问elasticsearch服务
-    ports:
-      - 4560:4560
- 
 networks:
-  es-net:
-    external: false
+  elastic:
+    driver: bridge

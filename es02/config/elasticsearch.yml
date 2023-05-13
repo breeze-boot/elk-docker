@@ -1,0 +1,19 @@
+cluster.name: es-docker-cluster
+node.name: es02
+node.master: true
+node.data: true
+
+# 节点不允许内存交换
+bootstrap.memory_lock: true
+# 用于在es集群初始化时选举主节点master
+cluster.initial_master_nodes: es01,es02,es03
+
+
+network.host: es02
+http.port: 9200
+transport.tcp.port: 9300
+http.cors.enabled: true
+http.cors.allow-origin: "*"
+
+# destructive_requires_name为true，禁止使用通配符或者_all标识索引
+action.destructive_requires_name: true
